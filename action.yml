@@ -1,0 +1,91 @@
+name: "Trivy Security Scan"
+description: "Run Trivy vulnerability, secret, misconfiguration, and license scans from a reusable composite action."
+
+inputs:
+  scan-type:
+    description: "Trivy scan type: fs, image, repo, rootfs, or config."
+    required: false
+    default: "fs"
+  scan-ref:
+    description: "Path, repository URL, rootfs path, or config target to scan."
+    required: false
+    default: "."
+  image-ref:
+    description: "Container image to scan. Overrides scan-ref when provided."
+    required: false
+    default: ""
+  scanners:
+    description: "Comma-separated scanners to run."
+    required: false
+    default: "vuln,secret,misconfig"
+  severity:
+    description: "Comma-separated severities to report."
+    required: false
+    default: "CRITICAL,HIGH"
+  vuln-type:
+    description: "Comma-separated vulnerability types to scan."
+    required: false
+    default: "os,library"
+  ignore-unfixed:
+    description: "Ignore vulnerabilities without a fixed version."
+    required: false
+    default: "true"
+  format:
+    description: "Trivy output format. Use sarif for GitHub code scanning."
+    required: false
+    default: "sarif"
+  output:
+    description: "Path to write the Trivy report. Leave empty to print to the job log."
+    required: false
+    default: "trivy-results.sarif"
+  exit-code:
+    description: "Exit code when findings match the configured filters."
+    required: false
+    default: "1"
+  trivyignores:
+    description: "Comma-separated .trivyignore files."
+    required: false
+    default: ""
+  skip-dirs:
+    description: "Comma-separated directories to skip."
+    required: false
+    default: ""
+  skip-files:
+    description: "Comma-separated files to skip."
+    required: false
+    default: ""
+  upload-sarif:
+    description: "Upload SARIF results to GitHub code scanning when format is sarif and output is set."
+    required: false
+    default: "true"
+  limit-severities-for-sarif:
+    description: "Respect the severity input when producing SARIF output."
+    required: false
+    default: "true"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Run Trivy scan
+      uses: aquasecurity/trivy-action@v0.36.0
+      with:
+        scan-type: ${{ inputs.image-ref != '' && 'image' || inputs.scan-type }}
+        scan-ref: ${{ inputs.scan-ref }}
+        image-ref: ${{ inputs.image-ref }}
+        scanners: ${{ inputs.scanners }}
+        severity: ${{ inputs.severity }}
+        vuln-type: ${{ inputs.vuln-type }}
+        ignore-unfixed: ${{ inputs.ignore-unfixed }}
+        format: ${{ inputs.format }}
+        output: ${{ inputs.output }}
+        exit-code: ${{ inputs.exit-code }}
+        limit-severities-for-sarif: ${{ inputs.limit-severities-for-sarif }}
+        trivyignores: ${{ inputs.trivyignores }}
+        skip-dirs: ${{ inputs.skip-dirs }}
+        skip-files: ${{ inputs.skip-files }}
+
+    - name: Upload Trivy SARIF
+      if: ${{ inputs.upload-sarif == 'true' && inputs.format == 'sarif' && inputs.output != '' && always() }}
+      uses: github/codeql-action/upload-sarif@v4
+      with:
+        sarif_file: ${{ inputs.output }}
