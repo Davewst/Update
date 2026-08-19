@@ -107,12 +107,4 @@ runs:
         REPORT_EXIT_CODE: ${{ inputs.exit-code }}
       run: python3 "${{ github.action_path }}/trivy-report.py"
 
-    - name: Upload report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ inputs.artifact-name }}
-        path: |
-          trivy-results.json
-          trivy-report.md
-        if-no-files-found: warn
+
