@@ -1,17 +1,17 @@
 name: "Trivy Security Scan"
-description: "Run Trivy vulnerability, secret, misconfiguration, and license scans from a reusable composite action."
+description: "Scan a repo or image with Trivy and report findings grouped by the image layer that introduced them."
 
 inputs:
   scan-type:
-    description: "Trivy scan type: fs, image, repo, rootfs, or config."
+    description: "fs, image, repo, rootfs, or config. Forced to image when image-ref is set."
     required: false
     default: "fs"
   scan-ref:
-    description: "Path, repository URL, rootfs path, or config target to scan."
+    description: "Path or target to scan when image-ref is empty."
     required: false
     default: "."
   image-ref:
-    description: "Container image to scan. Overrides scan-ref when provided."
+    description: "Container image to scan. Overrides scan-ref."
     required: false
     default: ""
   scanners:
@@ -22,51 +22,50 @@ inputs:
     description: "Comma-separated severities to report."
     required: false
     default: "CRITICAL,HIGH"
-  vuln-type:
-    description: "Comma-separated vulnerability types to scan."
-    required: false
-    default: "os,library"
   ignore-unfixed:
-    description: "Ignore vulnerabilities without a fixed version."
+    description: "Ignore vulnerabilities with no published fix."
     required: false
-    default: "true"
-  format:
-    description: "Trivy output format. Use sarif for GitHub code scanning."
-    required: false
-    default: "sarif"
-  output:
-    description: "Path to write the Trivy report. Leave empty to print to the job log."
-    required: false
-    default: "trivy-results.sarif"
+    default: "false"
   exit-code:
-    description: "Exit code when findings match the configured filters."
+    description: "Set to 0 to report findings without failing the job."
     required: false
     default: "1"
   trivyignores:
     description: "Comma-separated .trivyignore files."
     required: false
     default: ""
-  skip-dirs:
-    description: "Comma-separated directories to skip."
-    required: false
-    default: ""
-  skip-files:
-    description: "Comma-separated files to skip."
-    required: false
-    default: ""
   upload-sarif:
-    description: "Upload SARIF results to GitHub code scanning when format is sarif and output is set."
+    description: "Also upload results to GitHub code scanning. Needs security-events: write."
     required: false
     default: "true"
-  limit-severities-for-sarif:
-    description: "Respect the severity input when producing SARIF output."
+  artifact-name:
+    description: "Report artifact name. Must be unique within a run."
     required: false
-    default: "true"
+    default: "trivy-report"
+
+outputs:
+  total:
+    description: "Total findings."
+    value: ${{ steps.report.outputs.total }}
+  critical:
+    description: "CRITICAL findings."
+    value: ${{ steps.report.outputs.critical }}
+  high:
+    description: "HIGH findings."
+    value: ${{ steps.report.outputs.high }}
+  fixable:
+    description: "Vulnerabilities with a published fix."
+    value: ${{ steps.report.outputs.fixable }}
+  report:
+    description: "Path to the rendered Markdown report."
+    value: trivy-report.md
 
 runs:
   using: "composite"
   steps:
-    - name: Run Trivy scan
+    # Scan once to JSON. Gating happens in the report step so a failing scan still
+    # produces a readable report instead of an empty red job.
+    - name: Run Trivy
       uses: aquasecurity/trivy-action@v0.36.0
       with:
         scan-type: ${{ inputs.image-ref != '' && 'image' || inputs.scan-type }}
@@ -74,18 +73,46 @@ runs:
         image-ref: ${{ inputs.image-ref }}
         scanners: ${{ inputs.scanners }}
         severity: ${{ inputs.severity }}
-        vuln-type: ${{ inputs.vuln-type }}
         ignore-unfixed: ${{ inputs.ignore-unfixed }}
-        format: ${{ inputs.format }}
-        output: ${{ inputs.output }}
-        exit-code: ${{ inputs.exit-code }}
-        limit-severities-for-sarif: ${{ inputs.limit-severities-for-sarif }}
         trivyignores: ${{ inputs.trivyignores }}
-        skip-dirs: ${{ inputs.skip-dirs }}
-        skip-files: ${{ inputs.skip-files }}
+        format: json
+        output: trivy-results.json
+        exit-code: "0"
 
-    - name: Upload Trivy SARIF
-      if: ${{ inputs.upload-sarif == 'true' && inputs.format == 'sarif' && inputs.output != '' && always() }}
+    - name: Convert to SARIF
+      if: ${{ inputs.upload-sarif == 'true' }}
+      uses: aquasecurity/trivy-action@v0.36.0
+      with:
+        scan-type: convert
+        image-ref: trivy-results.json
+        severity: ""
+        vuln-type: ""
+        format: sarif
+        output: trivy-results.sarif
+
+    - name: Upload SARIF
+      if: ${{ inputs.upload-sarif == 'true' }}
       uses: github/codeql-action/upload-sarif@v4
       with:
-        sarif_file: ${{ inputs.output }}
+        sarif_file: trivy-results.sarif
+
+    - name: Report
+      id: report
+      shell: bash
+      env:
+        REPORT_JSON: trivy-results.json
+        REPORT_MD: trivy-report.md
+        REPORT_TARGET: ${{ inputs.image-ref != '' && inputs.image-ref || inputs.scan-ref }}
+        REPORT_SEVERITY: ${{ inputs.severity }}
+        REPORT_EXIT_CODE: ${{ inputs.exit-code }}
+      run: python3 "${{ github.action_path }}/trivy-report.py"
+
+    - name: Upload report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: |
+          trivy-results.json
+          trivy-report.md
+        if-no-files-found: warn

@@ -12,8 +12,8 @@ jobs:
     env:
       
       REPOS: |
-        eliuma/dev-actions
-        eliuma/project-sim
+        Davewst/dev-actions
+        Davewst/project-sim
     
     steps:
       - name: Dispatch build
