@@ -113,5 +113,5 @@ runs:
         path: |
           trivy-results.json
           trivy-report.md
-          trivy-report.html
+          trivy-layers.html
         if-no-files-found: warn
