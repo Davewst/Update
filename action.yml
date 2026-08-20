@@ -97,6 +97,9 @@ runs:
       env:
         REPORT_JSON: trivy-results.json
         REPORT_MD: trivy-report.md
+        REPORT_HTML: trivy-layers.html          # new
+        REPORT_BASE_DIFFIDS: base-diffids.json  # new
+        BASE_IMAGE: ${{ inputs.base-image }}    # new
         REPORT_TARGET: ${{ inputs.image-ref != '' && inputs.image-ref || inputs.scan-ref }}
         REPORT_SEVERITY: ${{ inputs.severity }}
         REPORT_EXIT_CODE: ${{ inputs.exit-code }}
